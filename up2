@@ -60,8 +60,10 @@ class CameraApp(QWidget):
     def update_display(self):
         # อัปเดตภาพจาก ESP32-CAM
         try:
-            response = requests.get(ESP32CAM_URL, timeout=2)
+            response = requests.get(ESP32CAM_URL, timeout=5)
+            print(f"HTTP Status Code: {response.status_code}")
             if response.status_code == 200:
+                print(f"Content-Type: {response.headers['Content-Type']}")
                 nparr = np.frombuffer(response.content, np.uint8)
                 if nparr.size > 0:
                     frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
