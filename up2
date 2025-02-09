@@ -1,0 +1,98 @@
+import sys
+import requests
+import numpy as np
+from PyQt6.QtWidgets import QApplication, QLabel, QWidget, QVBoxLayout
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QImage, QPixmap
+import cv2
+
+# URL ของ ESP32-CAM (เปลี่ยนเป็น IP จริงของอุปกรณ์)
+ESP32CAM_URL = "http://172.20.10.5"
+
+# ฟังก์ชันแปลงค่าสีฟัน Vita เป็นโค้ด RGB
+def vita_to_rgb():
+    return {
+        'A1': (245, 245, 220), 'A2': (255, 239, 219), 'A3': (255, 215, 180), 'A4': (237, 204, 143),
+        'B1': (255, 250, 240), 'B2': (255, 239, 199), 'B3': (252, 220, 177), 'B4': (222, 202, 159),
+        'C1': (234, 220, 204), 'C2': (235, 215, 186), 'C3': (231, 196, 159), 'C4': (196, 189, 142),
+        'D2': (249, 214, 183), 'D3': (246, 206, 184), 'D4': (203, 185, 158)
+    }
+
+# ฟังก์ชันหา Vita รหัสที่ใกล้เคียงที่สุด
+def find_closest_vita_color(color):
+    vita_rgb = vita_to_rgb()
+    min_diff = float('inf')
+    closest_vita_code = None
+    for vita_code, vita_color in vita_rgb.items():
+        diff = np.linalg.norm(np.array(color) - np.array(vita_color))
+        if diff < min_diff:
+            min_diff = diff
+            closest_vita_code = vita_code
+    return closest_vita_code
+
+class CameraApp(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Tooth Color & Camera Display")
+        self.setGeometry(100, 100, 800, 400)
+        
+        # ตั้งค่า UI
+        layout = QVBoxLayout()
+        
+        # ส่วนแสดงผลค่าสีที่พบและรหัส Vita
+        self.tooth_label = QLabel("Tooth Color")
+        self.tooth_label.setStyleSheet("background-color: black; color: white; font-size: 20px")
+        self.tooth_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.tooth_label)
+        
+        # ส่วนแสดงผลกล้อง ESP32-CAM
+        self.camera_label = QLabel("ESP32-CAM")
+        self.camera_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.camera_label)
+        
+        self.setLayout(layout)
+        
+        # ตั้งค่า Timer
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.update_display)
+        self.timer.start(100)  # อัปเดตทุก 100 มิลลิวินาที
+    
+    def update_display(self):
+        # อัปเดตภาพจาก ESP32-CAM
+        try:
+            response = requests.get(ESP32CAM_URL, timeout=2)
+            if response.status_code == 200:
+                nparr = np.frombuffer(response.content, np.uint8)
+                if nparr.size > 0:
+                    frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                    if frame is not None:
+                        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                        
+                        # คำนวณค่าเฉลี่ยสีของภาพจากกล้อง
+                        avg_color_per_row = np.average(frame, axis=0)
+                        avg_color = np.average(avg_color_per_row, axis=0)
+                        detected_color = tuple(map(int, avg_color))
+                        
+                        # หา Vita รหัสที่ใกล้เคียงที่สุด
+                        closest_vita_code = find_closest_vita_color(detected_color)
+                        self.tooth_label.setText(f"RGB: {detected_color} -> Vita: {closest_vita_code}")
+                        
+                        # แสดงภาพจากกล้อง
+                        h, w, ch = frame.shape
+                        bytes_per_line = ch * w
+                        qimg = QImage(frame.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
+                        self.camera_label.setPixmap(QPixmap.fromImage(qimg))
+                    else:
+                        print("Error: cv2.imdecode returned None.")
+                else:
+                    print("Error: Received empty image buffer.")
+            else:
+                print(f"Error: Received status code {response.status_code} from ESP32-CAM.")
+        except Exception as e:
+            print(f"Error fetching image: {e}")
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = CameraApp()
+    window.show()
+    sys.exit(app.exec())
