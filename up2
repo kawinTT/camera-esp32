@@ -63,23 +63,31 @@ class CameraApp(QWidget):
             response = requests.get(ESP32CAM_URL, timeout=2)
             if response.status_code == 200:
                 nparr = np.frombuffer(response.content, np.uint8)
-                frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                
-                # คำนวณค่าเฉลี่ยสีของภาพจากกล้อง
-                avg_color_per_row = np.average(frame, axis=0)
-                avg_color = np.average(avg_color_per_row, axis=0)
-                detected_color = tuple(map(int, avg_color))
-                
-                # หา Vita รหัสที่ใกล้เคียงที่สุด
-                closest_vita_code = find_closest_vita_color(detected_color)
-                self.tooth_label.setText(f"RGB: {detected_color} -> Vita: {closest_vita_code}")
-                
-                # แสดงภาพจากกล้อง
-                h, w, ch = frame.shape
-                bytes_per_line = ch * w
-                qimg = QImage(frame.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
-                self.camera_label.setPixmap(QPixmap.fromImage(qimg))
+                if nparr.size > 0:
+                    frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                    if frame is not None:
+                        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                        
+                        # คำนวณค่าเฉลี่ยสีของภาพจากกล้อง
+                        avg_color_per_row = np.average(frame, axis=0)
+                        avg_color = np.average(avg_color_per_row, axis=0)
+                        detected_color = tuple(map(int, avg_color))
+                        
+                        # หา Vita รหัสที่ใกล้เคียงที่สุด
+                        closest_vita_code = find_closest_vita_color(detected_color)
+                        self.tooth_label.setText(f"RGB: {detected_color} -> Vita: {closest_vita_code}")
+                        
+                        # แสดงภาพจากกล้อง
+                        h, w, ch = frame.shape
+                        bytes_per_line = ch * w
+                        qimg = QImage(frame.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
+                        self.camera_label.setPixmap(QPixmap.fromImage(qimg))
+                    else:
+                        print("Error: cv2.imdecode returned None.")
+                else:
+                    print("Error: Received empty image buffer.")
+            else:
+                print(f"Error: Received status code {response.status_code} from ESP32-CAM.")
         except Exception as e:
             print(f"Error fetching image: {e}")
 
